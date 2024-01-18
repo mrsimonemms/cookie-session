@@ -4,7 +4,7 @@
   "description": "Drop-in replacement for Express session using a cookie",
   "author": "Simon Emms <simon@simonemms.com>",
   "license": "Apache-2.0",
-  "main": "session",
+  "main": "cookieSession",
   "scripts": {
     "prebuild": "npm run clean",
     "build": "tsc --build tsconfig.build.json",
@@ -14,11 +14,9 @@
     "lint": "eslint \"{src}/**/*.ts\" --fix",
     "test": "jest"
   },
-  "peerDependencies": {
-    "express-session": "^1.0.0"
-  },
   "devDependencies": {
-    "@types/express-session": "^1.0.0",
+    "@types/cookies": "^0.7.10",
+    "@types/express": "^4.17.21",
     "@types/jest": "^29.5.11",
     "@types/node": "^20.11.5",
     "@typescript-eslint/eslint-plugin": "^6.0.0",
@@ -50,5 +48,8 @@
     ],
     "coverageDirectory": "../coverage",
     "testEnvironment": "node"
+  },
+  "dependencies": {
+    "cookies": "^0.9.1"
   }
 }

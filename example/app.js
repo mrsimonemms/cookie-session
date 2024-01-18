@@ -16,19 +16,27 @@
 
 const express = require('express');
 const { CookieSession } = require('cookie-session');
-const expressSession = require('express-session');
+const session = require('express-session');
 
 const app = express();
 
 app.use(
-  expressSession({
-    secret: 'some-secret',
-    resave: false,
-    store: new CookieSession(),
+  CookieSession.express({
+    flash: false,
+    secret: 'this-is-some-super-secret-key',
   }),
 );
+// app.use(
+//   session({
+//     resave: false,
+//     secret: 'hello-world',
+//     saveUninitialized: false,
+//   }),
+// );
 
 app.get('/', (req, res) => {
+  console.log(req.session);
+  req.session.s = new Date();
   res.json({ session: req.session });
 });
 
