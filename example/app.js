@@ -22,7 +22,7 @@ const app = express();
 
 app.use(
   CookieSession.express({
-    flash: false,
+    flash: true,
     secret: 'this-is-some-super-secret-key',
   }),
 );
@@ -35,9 +35,16 @@ app.use(
 // );
 
 app.get('/', (req, res) => {
+  req.session.bum = 'hello';
+  // req.session.s = new Date();
+
+  // console.log(req.session.s);
+  // console.log('---');
+  // console.log(req.session);
   console.log(req.session);
-  req.session.s = new Date();
-  res.json({ session: req.session });
+  // console.log('---');
+
+  res.json({ session: 33 });
 });
 
 app.listen(3000, () => {

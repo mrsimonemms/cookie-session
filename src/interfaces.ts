@@ -1,5 +1,7 @@
 import * as Cookies from 'cookies';
-import { Request,  } from 'express';
+import { Request } from 'express';
+
+export type callback = (err: unknown) => void;
 
 export interface ICookieSessionOpts {
   duration?: number; // Life of the session in milliseconds - defaults to 24 hours
@@ -10,5 +12,10 @@ export interface ICookieSessionOpts {
 }
 
 export interface RequestSession extends Request {
+  sessionID?: string;
   session?: Record<string, any>;
+}
+
+export interface Data {
+  [key: string]: unknown;
 }

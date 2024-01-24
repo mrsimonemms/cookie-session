@@ -1,7 +1,6 @@
 {
   "name": "example",
   "version": "0.0.0",
-  "description": "",
   "main": "app",
   "private": true,
   "scripts": {
@@ -16,5 +15,6 @@
   },
   "devDependencies": {
     "nodemon": "^3.0.3"
-  }
+  },
+  "type": "commonjs"
 }

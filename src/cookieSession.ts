@@ -16,17 +16,39 @@
 
 import * as Cookies from 'cookies';
 import { NextFunction, RequestHandler, Response } from 'express';
+import { IncomingMessage, ServerResponse } from 'http';
 import { ICookieSessionOpts, RequestSession } from 'interfaces';
+import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 
-
-
 export class CookieSession extends EventEmitter {
-  constructor(private opts: ICookieSessionOpts) {
+  private readonly cookies: Cookies;
+
+  // Session data is stored here
+  public data: Record<string, unknown>;
+
+  public readonly sessionId: string;
+
+  constructor(
+    private opts: ICookieSessionOpts,
+    req: IncomingMessage,
+    res: ServerResponse,
+  ) {
     super();
 
     this.applyDefaultOpts();
     this.validate();
+    this.sessionId = randomUUID();
+
+    this.cookies = new Cookies(req, res);
+
+    this.data = new Proxy<Record<string, unknown>>(
+      {},
+      {
+        get: (target, prop: string, receiver: Record<string, unknown>) =>
+          this.getDataItem(target, prop, receiver),
+      },
+    );
   }
 
   private applyDefaultOpts(): void {
@@ -43,10 +65,61 @@ export class CookieSession extends EventEmitter {
     };
   }
 
+  private getDataItem(
+    target: unknown,
+    prop: string,
+    receiver: Record<string, unknown>,
+  ): any {
+    const value = target[prop];
+    if (this.opts.flash) {
+      delete receiver[prop];
+    }
+
+    return value;
+  }
+
   private validate(): void {
     if (!this.opts.secret || this.opts.secret.length < 16) {
       throw new Error('Secret must be at least 16 characters long');
     }
+  }
+
+  protected async decryptData(input: string): Promise<string> {
+    return input;
+  }
+
+  protected async encryptData(): Promise<string | undefined> {
+    return JSON.stringify(this.data);
+  }
+
+  async loadData(): Promise<void> {
+    // Get the data from the cookie
+    const encData = this.cookies.get(this.opts.name, {
+      signed: this.opts.cookie.signed,
+    });
+    if (!encData) {
+      return;
+    }
+
+    // Decrypt the data
+    const strData = await this.decryptData(encData);
+    if (!strData) {
+      return;
+    }
+
+    const cookieData = JSON.parse(strData);
+    if (cookieData) {
+      // Load the data
+      this.data = { ...cookieData };
+    }
+  }
+
+  async saveCookieData(): Promise<void> {
+    this.cookies.set(
+      this.opts.name,
+      await this.encryptData(), // This is destructive if using flash sessions
+      this.opts.cookie,
+    );
   }
 
   /**
@@ -58,20 +131,34 @@ export class CookieSession extends EventEmitter {
    * @returns RequestHandler
    */
   static express(opts: ICookieSessionOpts): RequestHandler {
-    const cookieSession = new CookieSession(opts);
-
-    return function (req: RequestSession, res: Response, next: NextFunction) {
-      const cookies = new Cookies(req, res);
-
-      cookieSession.on('update', () => {});
-      console.log(cookies.get(cookieSession.opts.name));
-
+    return async (req: RequestSession, res: Response, next: NextFunction) => {
       if (req.session) {
         throw new Error('Cannot redeclare session');
       }
 
-      // cookies.set(cookieSession.opts.name);
-      // cookies.set(cookieSession.opts.name, `hello-${id}`);
+      // Invoke the CookieSession class
+      const cookieSession = new CookieSession(opts, req, res);
+
+      try {
+        await cookieSession.loadData();
+      } catch (err) {
+        next(err);
+        return;
+      }
+
+      req.sessionID = cookieSession.sessionId; // Not really used here, but provides backwards compatibility with express-session
+      req.session = cookieSession.data;
+
+      const { end } = res;
+      res.end = (async (
+        chunk: any,
+        encoding: BufferEncoding,
+        cb: () => void,
+      ): Promise<void> => {
+        await cookieSession.saveCookieData();
+
+        end.call(res, chunk, encoding, cb);
+      }) as any;
 
       next();
     };
