@@ -15,10 +15,13 @@
  */
 
 import * as Cookies from 'cookies';
+import { debug as debugLib } from 'debug';
 import { NextFunction, RequestHandler, Response } from 'express';
 import { IncomingMessage, ServerResponse } from 'http';
 import { ICookieSessionOpts, RequestSession } from 'interfaces';
 import { randomUUID } from 'node:crypto';
+
+const debug = debugLib('cookie-session');
 
 export class CookieSession {
   private readonly cookies: Cookies;
@@ -68,6 +71,8 @@ export class CookieSession {
         next(new Error('Cannot redeclare session'));
         return;
       }
+
+      debug('Creating cookie-session instance');
 
       const cookieSession = new CookieSession(opts, req, res);
 

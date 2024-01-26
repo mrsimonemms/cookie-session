@@ -22,5 +22,5 @@ endif
 
 dev:
 	npm run build
-	cd example && npm i && npm run dev
+	cd example && npm i && DEBUG=cookie-session npm run dev
 .PHONY: dev
