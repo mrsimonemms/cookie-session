@@ -59,6 +59,22 @@ export class CookieSession {
     };
   }
 
+  private getDataItem(
+    target: Record<string, unknown>,
+    prop: string,
+    receiver: Record<string, unknown>,
+  ): any {
+    debug(`Retrieving data: ${prop}`);
+
+    const value = target[prop];
+    if (this.opts.flash) {
+      debug(`Deleting flash data after reading: ${prop}`);
+      delete receiver[prop];
+    }
+
+    return value;
+  }
+
   private validate(): void {
     if (!this.opts.secret || this.opts.secret.length < 16) {
       throw new Error('Secret must be at least 16 characters long');
@@ -102,26 +118,30 @@ export class CookieSession {
     const encData = this.cookies.get(this.opts.name, {
       signed: this.opts.cookie.signed,
     });
-    if (!encData) {
+    if (encData) {
+      // Decrypt the data
+      debug('Decrypting cookie data');
+      const strData = await this.decryptData(encData);
+      if (strData) {
+        debug('Parsing data to JSON');
+        const cookieData = JSON.parse(strData);
+        if (cookieData) {
+          // Load the data
+          debug('Data successfully decrypted - loading');
+          this.data = { ...cookieData };
+        }
+      } else {
+        debug('No data found after decryption');
+      }
+    } else {
       debug('No data in cookie');
-      return;
     }
 
-    // Decrypt the data
-    debug('Decrypting cookie data');
-    const strData = await this.decryptData(encData);
-    if (!strData) {
-      debug('No data found after decryption');
-      return;
-    }
-
-    debug('Parsing data to JSON');
-    const cookieData = JSON.parse(strData);
-    if (cookieData) {
-      // Load the data
-      debug('Data successfully decrypted - loading');
-      this.data = { ...cookieData };
-    }
+    // Wrap the data in a Proxy, so we can intercept the getters
+    this.data = new Proxy<Record<string, unknown>>(this.data, {
+      get: (target, prop: string, receiver: Record<string, unknown>) =>
+        this.getDataItem(target, prop, receiver),
+    });
   }
 
   async saveCookieData(): Promise<void> {

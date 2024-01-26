@@ -34,6 +34,7 @@ const app = express();
 app
   .use(CookieSession.express(config.session))
   .get('/', (req, res) => {
+    // If done using "flash", this will delete the "date" session, but not "date2"
     const { date } = req.session;
 
     res.json({ getter: { date } });
@@ -41,6 +42,7 @@ app
   .get('/set', (req, res) => {
     const date = new Date();
     req.session.date = date;
+    req.session.data2 = date;
 
     res.json({ setter: { date } });
   })
