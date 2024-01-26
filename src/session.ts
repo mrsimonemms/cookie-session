@@ -65,6 +65,29 @@ export class CookieSession {
     }
   }
 
+  /**
+   * Encrypt Data
+   *
+   * Encrypt the session data into a string. The
+   * default function isn't actually asynchronous, but
+   * use an async method to allow for extension
+   * with different encryption algorithms
+   *
+   * @returns Promise<string>
+   */
+  async encryptData(): Promise<string> {
+    // @todo(sje): actually encrypt the data
+    return JSON.stringify(this.data);
+  }
+
+  async saveCookieData(): Promise<void> {
+    this.cookies.set(
+      this.opts.name,
+      await this.encryptData(),
+      this.opts.cookie,
+    );
+  }
+
   static express(opts: ICookieSessionOpts): RequestHandler {
     return async (req: RequestSession, res: Response, next: NextFunction) => {
       if (req.session) {
@@ -74,11 +97,26 @@ export class CookieSession {
 
       debug('Creating cookie-session instance');
 
-      const cookieSession = new CookieSession(opts, req, res);
+      req.cookieSession = new CookieSession(opts, req, res);
+      req.sessionID = req.cookieSession.sessionId; // Not really used here, but provides backwards compatibility with express-session
+      req.session = req.cookieSession.data;
+      req.session.id = req.cookieSession.sessionId;
 
-      req.sessionID = cookieSession.sessionId; // Not really used here, but provides backwards compatibility with express-session
-      req.session = cookieSession.data;
-      req.session.id = cookieSession.sessionId;
+      // Intercept the middleware before final send to add cookie data
+      const { end } = res;
+      res.end = (async (
+        chunk: any,
+        encoding: BufferEncoding,
+        cb: () => void,
+      ): Promise<void> => {
+        debug('Saving session to cookie');
+        // Save the cookie data to the HTTP header
+        await req.cookieSession.saveCookieData();
+
+        debug('Continuing middleware execution chain');
+        // Continue executing the middleware chain
+        end.call(res, chunk, encoding, cb);
+      }) as any;
 
       next();
     };

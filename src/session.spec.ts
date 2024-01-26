@@ -116,6 +116,65 @@ describe('Session tests', () => {
     });
   });
 
+  describe('#encryptData', () => {
+    let obj: CookieSession;
+
+    beforeEach(() => {
+      const req: any = {};
+      const res: any = {};
+
+      const opts: ICookieSessionOpts = {
+        secret: randomBytes(16).toString('hex').slice(0, 16),
+      };
+
+      obj = new CookieSession(opts, req, res);
+    });
+
+    it('should encrypt the data', async () => {
+      const data = {
+        hello: 'world',
+      };
+
+      obj.data = { ...data };
+
+      expect(await obj.encryptData()).toEqual(JSON.stringify(data));
+    });
+  });
+
+  describe('#saveCookieData', () => {
+    let obj: any;
+    let res: any;
+
+    beforeEach(() => {
+      const req: any = {};
+      res = {};
+
+      const opts: ICookieSessionOpts = {
+        secret: randomBytes(16).toString('hex').slice(0, 16),
+      };
+
+      obj = new CookieSession(opts, req, res);
+      obj.cookies = {
+        set: jest.fn(),
+      };
+      obj.encryptData = jest.fn();
+    });
+
+    it('should set the data to a cookie', async () => {
+      const data = 'some-data';
+      obj.encryptData.mockResolvedValue(data);
+
+      expect(await obj.saveCookieData()).toBeUndefined();
+
+      expect(obj.cookies.set).toHaveBeenCalledWith(
+        obj.opts.name,
+        data,
+        obj.opts.cookie,
+      );
+      expect(obj.encryptData).toHaveBeenCalledWith();
+    });
+  });
+
   describe('Static methods', () => {
     describe('#express', () => {
       it('should throw an error if session already exists on the request object', async () => {
@@ -137,8 +196,11 @@ describe('Session tests', () => {
       });
 
       it('should create express middleware instance', async () => {
+        const origEnd: any = jest.fn();
         const req: any = {};
-        const res: any = {};
+        const res: any = {
+          end: origEnd,
+        };
         const next = jest.fn();
 
         const opts: any = {
@@ -155,6 +217,22 @@ describe('Session tests', () => {
         expect(req.session).toEqual({
           id: uuid,
         });
+
+        // Check that the saveCookieData command is called at the end of res.end
+        expect(typeof res.end).toBe('function');
+
+        req.cookieSession = jest.fn(req.cookieSession);
+        req.cookieSession.saveCookieData = jest.fn();
+
+        const chunk: any = jest.fn();
+        const encoding: any = jest.fn();
+        const cb: any = jest.fn();
+
+        expect(await res.end(chunk, encoding, cb)).toBeUndefined();
+
+        expect(origEnd).toHaveBeenCalledWith(chunk, encoding, cb);
+
+        expect(req.cookieSession.saveCookieData).toHaveBeenCalledWith();
       });
     });
   });

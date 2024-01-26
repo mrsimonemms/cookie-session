@@ -16,6 +16,7 @@
 
 import * as Cookies from 'cookies';
 import { Request } from 'express';
+import { CookieSession } from './session';
 
 export type callback = (err: unknown) => void;
 
@@ -28,6 +29,7 @@ export interface ICookieSessionOpts {
 }
 
 export interface RequestSession extends Request {
+  cookieSession?: CookieSession;
   sessionID?: string;
   session?: Record<string, any>;
 }
