@@ -19,3 +19,8 @@ else
 	@cruft check || cruft update --skip-apply-ask --refresh-private-variables
 endif
 .PHONY: cruft-update
+
+dev:
+	npm run build
+	cd example && npm i && npm run dev
+.PHONY: dev
