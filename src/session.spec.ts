@@ -116,6 +116,27 @@ describe('Session tests', () => {
     });
   });
 
+  describe('#decryptData', () => {
+    let obj: CookieSession;
+
+    beforeEach(() => {
+      const req: any = {};
+      const res: any = {};
+
+      const opts: ICookieSessionOpts = {
+        secret: randomBytes(16).toString('hex').slice(0, 16),
+      };
+
+      obj = new CookieSession(opts, req, res);
+    });
+
+    it('should decrypt the data', async () => {
+      const input = 'some-input-data';
+
+      expect(await obj.decryptData(input)).toEqual(input);
+    });
+  });
+
   describe('#encryptData', () => {
     let obj: CookieSession;
 
@@ -138,6 +159,74 @@ describe('Session tests', () => {
       obj.data = { ...data };
 
       expect(await obj.encryptData()).toEqual(JSON.stringify(data));
+    });
+  });
+
+  describe('#loadCookieData', () => {
+    let obj: any;
+
+    beforeEach(() => {
+      const req: any = {};
+      const res: any = {};
+
+      const opts: ICookieSessionOpts = {
+        secret: randomBytes(16).toString('hex').slice(0, 16),
+      };
+
+      obj = new CookieSession(opts, req, res);
+      obj.cookies = {
+        get: jest.fn(),
+      };
+      obj.decryptData = jest.fn();
+    });
+
+    it('should handle no cookie data', async () => {
+      obj.cookies.get.mockReturnValue();
+
+      expect(await obj.loadCookieData()).toBeUndefined();
+
+      expect(obj.data).toEqual({});
+    });
+
+    it('should handle no unencrypted data', async () => {
+      const cookieData = 'some-cookie-data';
+      obj.cookies.get.mockReturnValue(cookieData);
+
+      obj.decryptData.mockResolvedValue();
+
+      expect(await obj.loadCookieData()).toBeUndefined();
+
+      expect(obj.decryptData).toHaveBeenCalledWith(cookieData);
+
+      expect(obj.data).toEqual({});
+    });
+
+    it('should handle no parse data', async () => {
+      const cookieData = 'some-cookie-data2';
+      obj.cookies.get.mockReturnValue(cookieData);
+
+      const decodedData = '""';
+      obj.decryptData.mockResolvedValue(decodedData);
+
+      expect(await obj.loadCookieData()).toBeUndefined();
+
+      expect(obj.decryptData).toHaveBeenCalledWith(cookieData);
+
+      expect(obj.data).toEqual({});
+    });
+
+    it('should handle some data', async () => {
+      const cookieData = 'some-cookie-data2';
+      obj.cookies.get.mockReturnValue(cookieData);
+
+      const decodedData = '{"hello": "world"}';
+      obj.decryptData.mockResolvedValue(decodedData);
+
+      expect(await obj.loadCookieData()).toBeUndefined();
+
+      expect(obj.decryptData).toHaveBeenCalledWith(cookieData);
+
+      expect(obj.data).toEqual({ ...JSON.parse(decodedData) });
     });
   });
 
@@ -207,11 +296,17 @@ describe('Session tests', () => {
           secret: 'this-is-a-super-secret-key',
         };
 
+        const loadCookieData = jest
+          .spyOn(CookieSession.prototype, 'loadCookieData')
+          .mockResolvedValue();
+
         const middleware = CookieSession.express(opts);
 
         expect(await middleware(req, res, next)).toBeUndefined();
 
         expect(next).toHaveBeenCalledWith();
+
+        expect(loadCookieData).toHaveBeenCalledWith();
 
         expect(req.sessionID).toBe(uuid);
         expect(req.session).toEqual({
@@ -233,6 +328,43 @@ describe('Session tests', () => {
         expect(origEnd).toHaveBeenCalledWith(chunk, encoding, cb);
 
         expect(req.cookieSession.saveCookieData).toHaveBeenCalledWith();
+      });
+
+      it('should handle an error when loading cookie data', async () => {
+        const origEnd: any = jest.fn();
+        const req: any = {};
+        const res: any = {
+          end: origEnd,
+        };
+        const next = jest.fn();
+
+        const opts: any = {
+          secret: 'this-is-a-super-secret-key',
+        };
+
+        const origErr = 'some-error';
+        const loadCookieData = jest
+          .spyOn(CookieSession.prototype, 'loadCookieData')
+          .mockRejectedValue(origErr);
+
+        const middleware = CookieSession.express(opts);
+
+        expect(await middleware(req, res, next)).toBeUndefined();
+
+        expect(next).toHaveBeenCalledWith(origErr);
+
+        expect(loadCookieData).toHaveBeenCalledWith();
+
+        req.cookieSession = jest.fn(req.cookieSession);
+        req.cookieSession.saveCookieData = jest.fn();
+
+        const chunk: any = jest.fn();
+        const encoding: any = jest.fn();
+        const cb: any = jest.fn();
+
+        expect(await res.end(chunk, encoding, cb)).toBeUndefined();
+
+        expect(origEnd).toHaveBeenCalledWith(chunk, encoding, cb);
       });
     });
   });

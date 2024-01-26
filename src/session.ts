@@ -66,6 +66,22 @@ export class CookieSession {
   }
 
   /**
+   * Decrypt Data
+   *
+   * Decrypt the cookie data into a string. The
+   * default function isn't actually asynchronous, but
+   * use an async method to allow for extension
+   * with different encryption algorithms
+   *
+   * @param input string
+   * @returns Promise<string>
+   */
+  async decryptData(input: string): Promise<string> {
+    // @todo(sje): actually decrypt the data
+    return input;
+  }
+
+  /**
    * Encrypt Data
    *
    * Encrypt the session data into a string. The
@@ -78,6 +94,34 @@ export class CookieSession {
   async encryptData(): Promise<string> {
     // @todo(sje): actually encrypt the data
     return JSON.stringify(this.data);
+  }
+
+  async loadCookieData(): Promise<void> {
+    // Get the data from the cookie
+    debug('Loading data from cookie');
+    const encData = this.cookies.get(this.opts.name, {
+      signed: this.opts.cookie.signed,
+    });
+    if (!encData) {
+      debug('No data in cookie');
+      return;
+    }
+
+    // Decrypt the data
+    debug('Decrypting cookie data');
+    const strData = await this.decryptData(encData);
+    if (!strData) {
+      debug('No data found after decryption');
+      return;
+    }
+
+    debug('Parsing data to JSON');
+    const cookieData = JSON.parse(strData);
+    if (cookieData) {
+      // Load the data
+      debug('Data successfully decrypted - loading');
+      this.data = { ...cookieData };
+    }
   }
 
   async saveCookieData(): Promise<void> {
@@ -98,6 +142,16 @@ export class CookieSession {
       debug('Creating cookie-session instance');
 
       req.cookieSession = new CookieSession(opts, req, res);
+
+      try {
+        debug('Loading session from cookies');
+        await req.cookieSession.loadCookieData();
+      } catch (err) {
+        debug('Error loading session data', { err });
+        next(err);
+        return;
+      }
+
       req.sessionID = req.cookieSession.sessionId; // Not really used here, but provides backwards compatibility with express-session
       req.session = req.cookieSession.data;
       req.session.id = req.cookieSession.sessionId;
