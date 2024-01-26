@@ -162,6 +162,79 @@ describe('Session tests', () => {
     });
   });
 
+  describe('#getDataItem', () => {
+    it('should keep the data when retrieved if flash not set', () => {
+      const req: any = {};
+      const res: any = {};
+
+      const opts: ICookieSessionOpts = {
+        secret: randomBytes(16).toString('hex').slice(0, 16),
+      };
+
+      const obj: any = new CookieSession(opts, req, res);
+
+      const target = 'this-is-target-data';
+      const other = 'this-is-other-data';
+      const data = {
+        target,
+        other,
+      };
+
+      expect(obj.getDataItem(data, 'target', data)).toBe(target);
+      expect(Object.keys(data)).toEqual(['target', 'other']);
+      expect(data.target).toEqual(target);
+      expect(data.other).toEqual(other);
+    });
+
+    it('should delete the data when retrieved if flash disabled', () => {
+      const req: any = {};
+      const res: any = {};
+
+      const opts: ICookieSessionOpts = {
+        secret: randomBytes(16).toString('hex').slice(0, 16),
+        flash: false,
+      };
+
+      const obj: any = new CookieSession(opts, req, res);
+
+      const target = 'this-is-target-data';
+      const other = 'this-is-other-data';
+      const data = {
+        target,
+        other,
+      };
+
+      expect(obj.getDataItem(data, 'target', data)).toBe(target);
+      expect(Object.keys(data)).toEqual(['target', 'other']);
+      expect(data.target).toEqual(target);
+      expect(data.other).toEqual(other);
+    });
+
+    it('should keep the data when retrieved if flash enabled', () => {
+      const req: any = {};
+      const res: any = {};
+
+      const opts: ICookieSessionOpts = {
+        secret: randomBytes(16).toString('hex').slice(0, 16),
+        flash: true,
+      };
+
+      const obj: any = new CookieSession(opts, req, res);
+
+      const target = 'this-is-target-data';
+      const other = 'this-is-other-data';
+      const data = {
+        target,
+        other,
+      };
+
+      expect(obj.getDataItem(data, 'target', data)).toBe(target);
+      expect(Object.keys(data)).toEqual(['other']);
+      expect(data.target).toBeFalsy();
+      expect(data.other).toEqual(other);
+    });
+  });
+
   describe('#loadCookieData', () => {
     let obj: any;
 
@@ -185,7 +258,7 @@ describe('Session tests', () => {
 
       expect(await obj.loadCookieData()).toBeUndefined();
 
-      expect(obj.data).toEqual({});
+      expect(JSON.stringify(obj.data)).toEqual('{}');
     });
 
     it('should handle no unencrypted data', async () => {
@@ -198,7 +271,7 @@ describe('Session tests', () => {
 
       expect(obj.decryptData).toHaveBeenCalledWith(cookieData);
 
-      expect(obj.data).toEqual({});
+      expect(JSON.stringify(obj.data)).toEqual('{}');
     });
 
     it('should handle no parse data', async () => {
@@ -212,7 +285,7 @@ describe('Session tests', () => {
 
       expect(obj.decryptData).toHaveBeenCalledWith(cookieData);
 
-      expect(obj.data).toEqual({});
+      expect(JSON.stringify(obj.data)).toEqual('{}');
     });
 
     it('should handle some data', async () => {
@@ -226,7 +299,9 @@ describe('Session tests', () => {
 
       expect(obj.decryptData).toHaveBeenCalledWith(cookieData);
 
-      expect(obj.data).toEqual({ ...JSON.parse(decodedData) });
+      expect(JSON.stringify(obj.data)).toEqual(
+        JSON.stringify(JSON.parse(decodedData)),
+      );
     });
   });
 
