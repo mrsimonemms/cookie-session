@@ -18,18 +18,39 @@ import * as Cookies from 'cookies';
 import { debug as debugLib } from 'debug';
 import { NextFunction, RequestHandler, Response } from 'express';
 import { IncomingMessage, ServerResponse } from 'http';
-import { ICookieSessionOpts, RequestSession } from 'interfaces';
+import { ICookieSessionOpts, RequestSession, callback } from 'interfaces';
 import { randomUUID } from 'node:crypto';
 
 const debug = debugLib('cookie-session');
+
+const callbackify = async (
+  fn: () => Promise<void> | void,
+  cb?: callback,
+): Promise<void> => {
+  let error: Error | undefined;
+  try {
+    await fn();
+  } catch (err) {
+    error = err;
+  }
+
+  if (cb) {
+    cb(error);
+    return;
+  }
+
+  if (error) {
+    throw error;
+  }
+};
+
+const noop = () => {};
 
 export class CookieSession {
   private readonly cookies: Cookies;
 
   // Session data is stored here
-  public data: Record<string, unknown>;
-
-  public readonly sessionId: string;
+  public data: { id?: string } & Record<string, unknown>;
 
   constructor(
     private opts: ICookieSessionOpts,
@@ -38,11 +59,17 @@ export class CookieSession {
   ) {
     this.applyDefaultOpts();
     this.validate();
-    this.sessionId = randomUUID();
 
     this.cookies = new Cookies(req, res);
 
     this.data = {};
+  }
+
+  get sessionId(): string {
+    if (!this.data.id) {
+      this.data.id = randomUUID();
+    }
+    return this.data.id;
   }
 
   private applyDefaultOpts(): void {
@@ -67,12 +94,20 @@ export class CookieSession {
     debug(`Retrieving data: ${prop}`);
 
     const value = target[prop];
-    if (this.opts.flash) {
+    if (this.opts.flash && prop !== 'id') {
       debug(`Deleting flash data after reading: ${prop}`);
       delete receiver[prop];
     }
 
     return value;
+  }
+
+  private proxyData(): void {
+    // Wrap the data in a Proxy, so we can intercept the getters
+    this.data = new Proxy<Record<string, unknown>>(this.data, {
+      get: (target, prop: string, receiver: Record<string, unknown>) =>
+        this.getDataItem(target, prop, receiver),
+    });
   }
 
   private validate(): void {
@@ -137,11 +172,21 @@ export class CookieSession {
       debug('No data in cookie');
     }
 
-    // Wrap the data in a Proxy, so we can intercept the getters
-    this.data = new Proxy<Record<string, unknown>>(this.data, {
-      get: (target, prop: string, receiver: Record<string, unknown>) =>
-        this.getDataItem(target, prop, receiver),
-    });
+    this.proxyData();
+  }
+
+  /**
+   * Regenerate
+   *
+   * This resets the data back to empty and regenerates
+   * the sessionId
+   */
+  regenerate(newId = false): undefined {
+    debug(`Regenerating session: newId=${newId}`);
+    this.data = {
+      id: newId ? randomUUID() : this.sessionId,
+    };
+    this.proxyData();
   }
 
   async saveCookieData(): Promise<void> {
@@ -172,9 +217,32 @@ export class CookieSession {
         return;
       }
 
-      req.sessionID = req.cookieSession.sessionId; // Not really used here, but provides backwards compatibility with express-session
-      req.session = req.cookieSession.data;
-      req.session.id = req.cookieSession.sessionId;
+      // Make the session behave like express-session
+      // @link https://expressjs.com/en/resources/middleware/session.html
+      function createSessionObject(): void {
+        req.sessionID = req.cookieSession.sessionId; // Not really used here, but provides backwards compatibility with express-session
+        req.session = req.cookieSession.data;
+
+        req.session.destroy = (cb?: callback) => {
+          callbackify(() => {
+            req.cookieSession.regenerate(false);
+
+            createSessionObject();
+          }, cb);
+        };
+        req.session.regenerate = (cb?: callback) => {
+          callbackify(() => {
+            req.cookieSession.regenerate(true);
+
+            createSessionObject();
+          }, cb);
+        };
+        req.session.reload = (cb?: callback) => callbackify(noop, cb);
+        req.session.save = (cb?: callback) => callbackify(noop, cb);
+        req.session.touch = (cb?: callback) => callbackify(noop, cb);
+      }
+
+      createSessionObject();
 
       // Intercept the middleware before final send to add cookie data
       const { end } = res;

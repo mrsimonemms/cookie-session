@@ -16,16 +16,24 @@
 
 import { randomBytes } from 'crypto';
 import { ICookieSessionOpts } from 'interfaces';
+import * as matchers from 'jest-extended';
+import { randomUUID } from 'node:crypto';
 import { CookieSession } from './session';
+
+expect.extend(matchers);
 
 // Set the UUID for the tests
 const uuid = '3a4f8ded-cce5-47d7-9772-246aa3807375';
 
 jest.mock('node:crypto', () => ({
-  randomUUID: () => uuid,
+  randomUUID: jest.fn(),
 }));
 
 describe('Session tests', () => {
+  beforeEach(() => {
+    (randomUUID as any).mockReturnValue(uuid);
+  });
+
   describe('#constructor', () => {
     it('should create an instance with default values', () => {
       const req: any = {};
@@ -176,14 +184,18 @@ describe('Session tests', () => {
       const target = 'this-is-target-data';
       const other = 'this-is-other-data';
       const data = {
+        id: uuid,
         target,
         other,
       };
 
       expect(obj.getDataItem(data, 'target', data)).toBe(target);
-      expect(Object.keys(data)).toEqual(['target', 'other']);
+      expect(Object.keys(data)).toContainAllValues(['target', 'other', 'id']);
       expect(data.target).toEqual(target);
       expect(data.other).toEqual(other);
+
+      expect(obj.getDataItem(data, 'id', data)).toEqual(uuid);
+      expect(data.id).toEqual(uuid);
     });
 
     it('should delete the data when retrieved if flash disabled', () => {
@@ -200,14 +212,18 @@ describe('Session tests', () => {
       const target = 'this-is-target-data';
       const other = 'this-is-other-data';
       const data = {
+        id: uuid,
         target,
         other,
       };
 
       expect(obj.getDataItem(data, 'target', data)).toBe(target);
-      expect(Object.keys(data)).toEqual(['target', 'other']);
+      expect(Object.keys(data)).toContainAllValues(['target', 'other', 'id']);
       expect(data.target).toEqual(target);
       expect(data.other).toEqual(other);
+
+      expect(obj.getDataItem(data, 'id', data)).toEqual(uuid);
+      expect(data.id).toEqual(uuid);
     });
 
     it('should keep the data when retrieved if flash enabled', () => {
@@ -224,14 +240,18 @@ describe('Session tests', () => {
       const target = 'this-is-target-data';
       const other = 'this-is-other-data';
       const data = {
+        id: uuid,
         target,
         other,
       };
 
       expect(obj.getDataItem(data, 'target', data)).toBe(target);
-      expect(Object.keys(data)).toEqual(['other']);
+      expect(Object.keys(data)).toContainAllValues(['other', 'id']);
       expect(data.target).toBeFalsy();
       expect(data.other).toEqual(other);
+
+      expect(obj.getDataItem(data, 'id', data)).toEqual(uuid);
+      expect(data.id).toEqual(uuid);
     });
   });
 
@@ -302,6 +322,73 @@ describe('Session tests', () => {
       expect(JSON.stringify(obj.data)).toEqual(
         JSON.stringify(JSON.parse(decodedData)),
       );
+    });
+  });
+
+  describe('#regenerate', () => {
+    let obj: any;
+    let res: any;
+
+    beforeEach(() => {
+      const req: any = {};
+      res = {};
+
+      const opts: ICookieSessionOpts = {
+        secret: randomBytes(16).toString('hex').slice(0, 16),
+      };
+
+      obj = new CookieSession(opts, req, res);
+    });
+
+    it('should regenerate the session and retain the new ID if no arguments', () => {
+      const key = 'key';
+      const value = 'value';
+
+      obj.data[key] = value;
+      expect(obj.sessionId).toBe(uuid);
+      expect(obj.data).toBeObject();
+      expect(obj.data).toContainEntries([[key, value]]);
+
+      expect(obj.regenerate()).toBeUndefined();
+
+      expect(obj.sessionId).toBe(uuid);
+      expect(obj.data).toBeObject();
+      expect(obj.data).not.toContainEntries([[key, value]]);
+    });
+
+    it('should regenerate the session and retain the new ID if false passed', () => {
+      const key = 'key';
+      const value = 'value';
+
+      obj.data[key] = value;
+      expect(obj.sessionId).toBe(uuid);
+      expect(obj.data).toBeObject();
+      expect(obj.data).toContainEntries([[key, value]]);
+
+      expect(obj.regenerate(false)).toBeUndefined();
+
+      expect(obj.sessionId).toBe(uuid);
+      expect(obj.data).toBeObject();
+      expect(obj.data).not.toContainEntries([[key, value]]);
+    });
+
+    it('should regenerate the session and get a new ID if true passed', () => {
+      const key = 'key';
+      const value = 'value';
+
+      obj.data[key] = value;
+      expect(obj.sessionId).toBe(uuid);
+      expect(obj.data).toBeObject();
+      expect(obj.data).toContainEntries([[key, value]]);
+
+      const newUUID = 'some-new-uuid';
+      (randomUUID as any).mockReturnValue(newUUID);
+
+      expect(obj.regenerate(true)).toBeUndefined();
+
+      expect(obj.sessionId).toBe(newUUID);
+      expect(obj.data).toBeObject();
+      expect(obj.data).not.toContainEntries([[key, value]]);
     });
   });
 
@@ -384,9 +471,17 @@ describe('Session tests', () => {
         expect(loadCookieData).toHaveBeenCalledWith();
 
         expect(req.sessionID).toBe(uuid);
-        expect(req.session).toEqual({
-          id: uuid,
-        });
+        expect(req.session).toEqual(
+          expect.objectContaining({
+            id: uuid,
+          }),
+        );
+
+        expect(req.session.destroy).toBeFunction();
+        expect(req.session.regenerate).toBeFunction();
+        expect(req.session.reload).toBeFunction();
+        expect(req.session.save).toBeFunction();
+        expect(req.session.touch).toBeFunction();
 
         // Check that the saveCookieData command is called at the end of res.end
         expect(typeof res.end).toBe('function');
