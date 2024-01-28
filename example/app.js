@@ -21,7 +21,7 @@ const { CookieSession } = require('cookie-session');
 
 const config = {
   session: {
-    flash: process.env.SESSION_FLASH !== 'false',
+    // flash: process.env.SESSION_FLASH !== 'false',
     secret: process.env.SESSION_SECRET ?? 'some-super-secret-key',
   },
   server: {
@@ -37,7 +37,21 @@ app
     // If done using "flash", this will delete the "date" session, but not "date2"
     const { date } = req.session;
 
-    res.json({ getter: { date } });
+    res.json({ sessionId: req.sessionID, getter: { date } });
+  })
+  .get('/clear', (req, res) => {
+    req.session.destroy();
+
+    res.json({
+      clear: true,
+    });
+  })
+  .get('/reset', (req, res) => {
+    req.session.regenerate();
+
+    res.json({
+      reset: true,
+    });
   })
   .get('/set', (req, res) => {
     const date = new Date();
