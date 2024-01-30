@@ -1,6 +1,6 @@
 {
   "name": "@mrsimonemms/cookie-session",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Drop-in replacement for Express session using a cookie",
   "author": "Simon Emms <simon@simonemms.com>",
   "license": "Apache-2.0",
