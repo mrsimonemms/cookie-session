@@ -6,10 +6,14 @@
   "license": "Apache-2.0",
   "main": "session",
   "types": "session.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mrsimonemms/cookie-session.git"
+  },
   "scripts": {
     "prebuild": "npm run clean",
     "build": "tsc --build tsconfig.build.json",
-    "postbuild": "cp package*.json dist",
+    "postbuild": "cp package*.json dist && cp README.md dist",
     "clean": "rm -Rf dist",
     "format": "prettier --write \"src/**/*.ts\"",
     "lint": "eslint \"{src}/**/*.ts\" --fix",
