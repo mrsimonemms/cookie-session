@@ -19,7 +19,9 @@ import { debug as debugLib } from 'debug';
 import { NextFunction, RequestHandler, Response } from 'express';
 import { IncomingMessage, ServerResponse } from 'http';
 import { ICookieSessionOpts, RequestSession, callback } from 'interfaces';
+import * as jwt from 'jsonwebtoken';
 import { randomUUID } from 'node:crypto';
+export { ICookieSessionOpts, RequestSession } from 'interfaces';
 
 const debug = debugLib('cookie-session');
 
@@ -46,11 +48,13 @@ const callbackify = async (
 
 const noop = () => {};
 
+export type Data = { id?: string } & Record<string, unknown>;
+
 export class CookieSession {
   private readonly cookies: Cookies;
 
   // Session data is stored here
-  public data: { id?: string } & Record<string, unknown>;
+  public data: Data;
 
   constructor(
     private opts: ICookieSessionOpts,
@@ -104,7 +108,7 @@ export class CookieSession {
 
   private proxyData(): void {
     // Wrap the data in a Proxy, so we can intercept the getters
-    this.data = new Proxy<Record<string, unknown>>(this.data, {
+    this.data = new Proxy<Data>(this.data, {
       get: (target, prop: string, receiver: Record<string, unknown>) =>
         this.getDataItem(target, prop, receiver),
     });
@@ -119,17 +123,24 @@ export class CookieSession {
   /**
    * Decrypt Data
    *
-   * Decrypt the cookie data into a string. The
+   * Decrypt the cookie data into an object. The
    * default function isn't actually asynchronous, but
    * use an async method to allow for extension
    * with different encryption algorithms
    *
    * @param input string
-   * @returns Promise<string>
+   * @returns Promise<Record<string, unknown>>
    */
-  async decryptData(input: string): Promise<string> {
-    // @todo(sje): actually decrypt the data
-    return input;
+  async decryptData(input: string): Promise<Record<string, unknown>> {
+    try {
+      const { session } = jwt.verify(input, this.opts.secret) as {
+        session: Record<string, unknown>;
+      };
+      return session;
+    } catch (err) {
+      debug(`Error decrypting data: ${err?.message ?? 'Unknown error'}`);
+      return {};
+    }
   }
 
   /**
@@ -143,8 +154,10 @@ export class CookieSession {
    * @returns Promise<string>
    */
   async encryptData(): Promise<string> {
-    // @todo(sje): actually encrypt the data
-    return JSON.stringify(this.data);
+    return jwt.sign({ session: this.data }, this.opts.secret, {
+      notBefore: 0,
+      expiresIn: Math.round(this.opts.duration / 1000),
+    });
   }
 
   async loadCookieData(): Promise<void> {
@@ -156,17 +169,11 @@ export class CookieSession {
     if (encData) {
       // Decrypt the data
       debug('Decrypting cookie data');
-      const strData = await this.decryptData(encData);
-      if (strData) {
-        debug('Parsing data to JSON');
-        const cookieData = JSON.parse(strData);
-        if (cookieData) {
-          // Load the data
-          debug('Data successfully decrypted - loading');
-          this.data = { ...cookieData };
-        }
-      } else {
-        debug('No data found after decryption');
+      const cookieData = await this.decryptData(encData);
+      if (cookieData) {
+        // Load the data
+        debug('Data successfully decrypted - loading');
+        this.data = { ...cookieData };
       }
     } else {
       debug('No data in cookie');
