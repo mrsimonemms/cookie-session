@@ -17,6 +17,7 @@
 import { randomBytes } from 'crypto';
 import { ICookieSessionOpts } from 'interfaces';
 import * as matchers from 'jest-extended';
+import * as jwt from 'jsonwebtoken';
 import { randomUUID } from 'node:crypto';
 import { CookieSession } from './session';
 
@@ -27,6 +28,11 @@ const uuid = '3a4f8ded-cce5-47d7-9772-246aa3807375';
 
 jest.mock('node:crypto', () => ({
   randomUUID: jest.fn(),
+}));
+
+jest.mock('jsonwebtoken', () => ({
+  sign: jest.fn(),
+  verify: jest.fn(),
 }));
 
 describe('Session tests', () => {
@@ -126,12 +132,13 @@ describe('Session tests', () => {
 
   describe('#decryptData', () => {
     let obj: CookieSession;
+    let opts: ICookieSessionOpts;
 
     beforeEach(() => {
       const req: any = {};
       const res: any = {};
 
-      const opts: ICookieSessionOpts = {
+      opts = {
         secret: randomBytes(16).toString('hex').slice(0, 16),
       };
 
@@ -140,15 +147,31 @@ describe('Session tests', () => {
 
     it('should decrypt the data', async () => {
       const input = 'some-input-data';
+      const session = 'some-output-data';
+      (jwt.verify as any).mockReturnValue({
+        session,
+      });
 
-      expect(await obj.decryptData(input)).toEqual(input);
+      expect(await obj.decryptData(input)).toEqual(session);
+
+      expect(jwt.verify).toHaveBeenCalledWith(input, opts.secret);
+    });
+
+    it('should handle an error by creating a new data object', async () => {
+      const input = 'some-input-data';
+      const origErr = new Error('some error');
+      (jwt.verify as any).mockImplementation(() => {
+        throw origErr;
+      });
+
+      expect(await obj.decryptData(input)).toEqual({});
+
+      expect(jwt.verify).toHaveBeenCalledWith(input, opts.secret);
     });
   });
 
   describe('#encryptData', () => {
-    let obj: CookieSession;
-
-    beforeEach(() => {
+    it('should encrypt the data with default duration', async () => {
       const req: any = {};
       const res: any = {};
 
@@ -156,17 +179,59 @@ describe('Session tests', () => {
         secret: randomBytes(16).toString('hex').slice(0, 16),
       };
 
-      obj = new CookieSession(opts, req, res);
-    });
+      const obj = new CookieSession(opts, req, res);
 
-    it('should encrypt the data', async () => {
       const data = {
         hello: 'world',
       };
 
       obj.data = { ...data };
 
-      expect(await obj.encryptData()).toEqual(JSON.stringify(data));
+      const output = 'some-signed-output';
+      (jwt.sign as any).mockReturnValue(output);
+
+      expect(await obj.encryptData()).toEqual(output);
+
+      expect(jwt.sign).toHaveBeenCalledWith(
+        { session: obj.data },
+        opts.secret,
+        {
+          notBefore: 0,
+          expiresIn: 86400,
+        },
+      );
+    });
+
+    it('should encrypt the data with specified duration', async () => {
+      const req: any = {};
+      const res: any = {};
+
+      const opts: ICookieSessionOpts = {
+        secret: randomBytes(16).toString('hex').slice(0, 16),
+        duration: 1234567890,
+      };
+
+      const obj = new CookieSession(opts, req, res);
+
+      const data = {
+        hello: 'world',
+      };
+
+      obj.data = { ...data };
+
+      const output = 'some-signed-output';
+      (jwt.sign as any).mockReturnValue(output);
+
+      expect(await obj.encryptData()).toEqual(output);
+
+      expect(jwt.sign).toHaveBeenCalledWith(
+        { session: obj.data },
+        opts.secret,
+        {
+          notBefore: 0,
+          expiresIn: Math.round(opts.duration / 1000),
+        },
+      );
     });
   });
 
@@ -279,6 +344,8 @@ describe('Session tests', () => {
       expect(await obj.loadCookieData()).toBeUndefined();
 
       expect(JSON.stringify(obj.data)).toEqual('{}');
+
+      expect(obj.decryptData).not.toHaveBeenCalled();
     });
 
     it('should handle no unencrypted data', async () => {
@@ -292,13 +359,15 @@ describe('Session tests', () => {
       expect(obj.decryptData).toHaveBeenCalledWith(cookieData);
 
       expect(JSON.stringify(obj.data)).toEqual('{}');
+
+      expect(obj.decryptData).toHaveBeenCalledWith(cookieData);
     });
 
     it('should handle no parse data', async () => {
       const cookieData = 'some-cookie-data2';
       obj.cookies.get.mockReturnValue(cookieData);
 
-      const decodedData = '""';
+      const decodedData = {};
       obj.decryptData.mockResolvedValue(decodedData);
 
       expect(await obj.loadCookieData()).toBeUndefined();
@@ -312,16 +381,14 @@ describe('Session tests', () => {
       const cookieData = 'some-cookie-data2';
       obj.cookies.get.mockReturnValue(cookieData);
 
-      const decodedData = '{"hello": "world"}';
+      const decodedData = { hello: 'world' };
       obj.decryptData.mockResolvedValue(decodedData);
 
       expect(await obj.loadCookieData()).toBeUndefined();
 
       expect(obj.decryptData).toHaveBeenCalledWith(cookieData);
 
-      expect(JSON.stringify(obj.data)).toEqual(
-        JSON.stringify(JSON.parse(decodedData)),
-      );
+      expect(JSON.stringify(obj.data)).toEqual(JSON.stringify(decodedData));
     });
   });
 
